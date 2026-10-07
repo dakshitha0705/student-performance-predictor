@@ -1,0 +1,51 @@
+{
+  "model_version": "v1",
+  "model_family": "ridge",
+  "created_at_utc": "2026-10-07T17:37:57Z",
+  "feature_names": [
+    "G1",
+    "G2",
+    "studytime"
+  ],
+  "target_name": "G3",
+  "grade_range": [
+    0,
+    20
+  ],
+  "clipping_enabled": true,
+  "training_parameters": {
+    "scaler__copy": true,
+    "scaler__with_mean": true,
+    "scaler__with_std": true,
+    "model__alpha": 1.0,
+    "model__copy_X": true,
+    "model__fit_intercept": true,
+    "model__max_iter": null,
+    "model__positive": false,
+    "model__random_state": null,
+    "model__solver": "auto",
+    "model__tol": 0.0001
+  },
+  "dataset_sha256": "e47f9ee225e1ee6e69b7564e6dac7123e80b8486677fe111f351964cef5dec80",
+  "split_manifest_sha256": "b2b35b0297f31471319319edc3db0a97ae9db77b09fb76530f44bb77db6a5263",
+  "git_commit": "b9d5baa8af4c8784f078c91d9b453096f650807b",
+  "python_version": "3.14.3 (win32)",
+  "package_versions": {
+    "pandas": "3.0.6",
+    "numpy": "2.4.6",
+    "scikit-learn": "1.9.1",
+    "mlflow": "3.17.0",
+    "fastapi": "0.142.2",
+    "uvicorn": "0.54.0",
+    "streamlit": "1.65.0",
+    "requests": "2.34.2",
+    "pytest": "9.1.1",
+    "httpx": "0.28.1",
+    "joblib": "1.6.0",
+    "matplotlib": "3.11.2"
+  },
+  "validation_mae": 1.3730088747963356,
+  "validation_rmse": 2.435942554061137,
+  "validation_r2": 0.7426348284657778,
+  "mlflow_run_id": "1d291be8c0674051be9a280de38baff9"
+}
