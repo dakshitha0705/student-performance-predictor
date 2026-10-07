@@ -1,5 +1,4 @@
 {
-  "file_name": "student-mat.csv",
   "row_count": 395,
   "required_columns": [
     "G1",
@@ -8,7 +7,24 @@
     "G3"
   ],
   "missing_columns": [],
+  "missing_value_counts": {
+    "G1": 0,
+    "G2": 0,
+    "studytime": 0,
+    "G3": 0
+  },
+  "invalid_value_counts": {
+    "G1": 0,
+    "G2": 0,
+    "studytime": 0,
+    "G3": 0
+  },
+  "exact_duplicate_count": 0,
+  "duplicate_record_numbers": [],
   "valid": true,
   "issue_count": 0,
-  "issues": []
+  "issues": [],
+  "file_name": "student-mat.csv",
+  "cleaned_file_written": true,
+  "cleaned_row_count": 395
 }
