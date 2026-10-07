@@ -16,3 +16,4 @@ data/processed/*
 artifacts/*.joblib
 artifacts/candidates/
 artifacts/active-model.backup.json
+logs/
