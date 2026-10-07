@@ -1,80 +1,190 @@
-"""Stage 2: create the fixed 60/15/15/10 partitions.
+"""Create reproducible partitions from the validated working dataset."""
 
-Run:  python -m src.split
-
-Procedure (guide section 9), random_state=42, shuffle=True:
-  1. Reserve 10% of clean rows as `later` (the "new data" batch for retraining).
-  2. From the remaining 90%, reserve one third as the evaluation pool.
-  3. Split that pool equally into `validation` and final `test`.
-Result is about 60 / 15 / 15 / 10 after integer rounding. This is a random
-educational benchmark, not a chronological validation.
-"""
-from __future__ import annotations
-
+from pathlib import Path
+import hashlib
+import json
 import sys
 
+import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-
-from .common import DATA_DIR, PROCESSED_DIR, SEED, sha256_file, sha256_text, utc_now, write_json
-
-PARTITION_NAMES = ["train", "validation", "test", "later"]
 
 
-def make_partitions(df: pd.DataFrame, seed: int = SEED) -> dict[str, pd.DataFrame]:
-    rest, later = train_test_split(df, test_size=0.10, random_state=seed, shuffle=True)
-    train, pool = train_test_split(rest, test_size=1 / 3, random_state=seed, shuffle=True)
-    validation, test = train_test_split(pool, test_size=0.5, random_state=seed, shuffle=True)
-    return {"train": train, "validation": validation, "test": test, "later": later}
+ROOT = Path(__file__).resolve().parents[1]
+
+CLEANED = ROOT / "data" / "processed" / "student-mat-clean.csv"
+VALIDATION_REPORT = ROOT / "data" / "validation.json"
+RAW = ROOT / "data" / "raw" / "student-mat.csv"
+OUTPUT_DIR = ROOT / "data" / "processed"
+MANIFEST = ROOT / "data" / "splits.json"
+
+SEED = 42
+REQUIRED_COLUMNS = ["source_row_id", "G1", "G2", "studytime", "G3"]
 
 
-def ids_hash(ids: list[int]) -> str:
-    return sha256_text(",".join(str(i) for i in sorted(ids)))
+def file_sha256(path):
+    """Return a fingerprint of a file's exact bytes."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def main() -> int:
-    clean_path = PROCESSED_DIR / "student-mat-clean.csv"
-    if not clean_path.exists():
-        print("ERROR: data/processed/student-mat-clean.csv not found. Run `python -m src.validate` first.")
-        return 1
+def create_partitions(df, seed=SEED):
+    """Split records without changing the input DataFrame."""
+    missing = [
+        column for column in REQUIRED_COLUMNS
+        if column not in df.columns
+    ]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
 
-    df = pd.read_csv(clean_path, sep=";")
-    parts = make_partitions(df)
+    if len(df) < 10:
+        raise ValueError("At least 10 records are required.")
 
-    # Self-check: every row in exactly one partition.
-    all_ids = [i for p in parts.values() for i in p["source_row_id"].tolist()]
-    if len(all_ids) != len(set(all_ids)) or set(all_ids) != set(df["source_row_id"]):
-        print("ERROR: partitions are not disjoint and complete.")
-        return 1
+    ids = df["source_row_id"]
 
-    manifest = {
-        "created_at_utc": utc_now(),
-        "seed": SEED,
-        "procedure": "later=10%; from remaining 90%, evaluation pool=1/3; pool split equally into validation/test",
-        "clean_csv_sha256": sha256_file(clean_path),
-        "total_rows": int(len(df)),
-        "partitions": {},
+    if ids.isna().any() or ids.duplicated().any():
+        raise ValueError("source_row_id must be present and unique.")
+
+    numeric_ids = pd.to_numeric(ids, errors="coerce")
+    if (
+        numeric_ids.isna().any()
+        or (numeric_ids < 1).any()
+        or numeric_ids.mod(1).ne(0).any()
+    ):
+        raise ValueError("source_row_id must contain positive integers.")
+
+    # Sorting makes the result independent of input row ordering.
+    ordered = df.copy()
+    ordered["source_row_id"] = numeric_ids.astype("int64")
+    ordered = ordered.sort_values("source_row_id").reset_index(drop=True)
+
+    rng = np.random.default_rng(seed)
+    positions = rng.permutation(len(ordered))
+
+    total = len(ordered)
+    later_count = int(np.ceil(total * 0.10))
+    remaining_count = total - later_count
+
+    evaluation_count = int(np.ceil(remaining_count / 3))
+    test_count = int(np.ceil(evaluation_count / 2))
+    validation_count = evaluation_count - test_count
+
+    later_end = later_count
+    validation_end = later_end + validation_count
+    test_end = validation_end + test_count
+
+    partitions = {
+        "train": ordered.iloc[positions[test_end:]].copy(),
+        "validation": ordered.iloc[
+            positions[later_end:validation_end]
+        ].copy(),
+        "test": ordered.iloc[
+            positions[validation_end:test_end]
+        ].copy(),
+        "later": ordered.iloc[positions[:later_end]].copy(),
     }
-    for name in PARTITION_NAMES:
-        part = parts[name].reset_index(drop=True)
-        csv_path = PROCESSED_DIR / f"{name}.csv"
-        part.to_csv(csv_path, index=False)
-        ids = part["source_row_id"].tolist()
-        (PROCESSED_DIR / f"{name}_row_ids.txt").write_text(
-            "\n".join(str(i) for i in ids) + "\n", encoding="utf-8")
-        manifest["partitions"][name] = {
-            "rows": int(len(part)),
-            "share": round(len(part) / len(df), 4),
-            "row_ids_sha256": ids_hash(ids),
-            "csv_sha256": sha256_file(csv_path),
+
+    # Check that no record is lost or assigned more than once.
+    assigned_ids = [
+        int(record_id)
+        for part in partitions.values()
+        for record_id in part["source_row_id"]
+    ]
+
+    if len(assigned_ids) != total:
+        raise ValueError("Partition sizes do not cover all records.")
+
+    if len(set(assigned_ids)) != total:
+        raise ValueError("A record appears in multiple partitions.")
+
+    if set(assigned_ids) != set(ordered["source_row_id"]):
+        raise ValueError("Partition IDs do not match source IDs.")
+
+    return {
+        name: part.reset_index(drop=True)
+        for name, part in partitions.items()
+    }
+
+
+def main():
+    try:
+        if not VALIDATION_REPORT.exists():
+            raise ValueError("Run python -m src.validate first.")
+
+        report = json.loads(
+            VALIDATION_REPORT.read_text(encoding="utf-8-sig")
+        )
+
+        if (
+            not report.get("valid")
+            or not report.get("cleaned_file_written")
+        ):
+            raise ValueError("Validation must pass before splitting.")
+
+        if not CLEANED.exists():
+            raise ValueError("The cleaned dataset is missing.")
+
+        df = pd.read_csv(CLEANED, sep=";")
+
+        if len(df) != report.get("cleaned_row_count"):
+            raise ValueError(
+                "Cleaned row count differs from the validation report. "
+                "Run validation again."
+            )
+
+        partitions = create_partitions(df)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        manifest = {
+            "seed": SEED,
+            "method": "Sorted row IDs and NumPy default_rng permutation",
+            "numpy_version": np.__version__,
+            "pandas_version": pd.__version__,
+            "source_file": "data/processed/student-mat-clean.csv",
+            "source_sha256": file_sha256(CLEANED),
+            "raw_sha256": file_sha256(RAW),
+            "validation_report_sha256": file_sha256(VALIDATION_REPORT),
+            "total_rows": len(df),
+            "input_features": ["G1", "G2", "studytime"],
+            "target": "G3",
+            "identifier_excluded_from_features": "source_row_id",
+            "partitions": {},
         }
 
-    write_json(DATA_DIR / "splits.json", manifest)
-    for name in PARTITION_NAMES:
-        info = manifest["partitions"][name]
-        print(f"{name:<11} {info['rows']:>4} rows ({info['share']:.1%})")
-    print("OK: wrote data/processed/*.csv and data/splits.json")
-    return 0
+        for name, part in partitions.items():
+            output = OUTPUT_DIR / f"{name}.csv"
+
+            part.to_csv(
+                output,
+                sep=";",
+                index=False,
+                encoding="utf-8",
+                lineterminator="\n",
+            )
+
+            manifest["partitions"][name] = {
+                "file": f"data/processed/{name}.csv",
+                "row_count": len(part),
+                "source_row_ids": [
+                    int(value) for value in part["source_row_id"]
+                ],
+                "sha256": file_sha256(output),
+            }
+
+        MANIFEST.write_text(
+            json.dumps(manifest, indent=2),
+            encoding="utf-8",
+        )
+
+        print(f"PASS: Split {len(df)} records with seed {SEED}.")
+        for name, part in partitions.items():
+            print(f"{name}: {len(part)} records")
+
+        print("No overlapping or missing record IDs.")
+        print(f"Manifest: {MANIFEST}")
+        return 0
+
+    except (OSError, ValueError, KeyError) as error:
+        print(f"FAIL: {error}")
+        return 1
 
 
 if __name__ == "__main__":

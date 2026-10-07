@@ -118,7 +118,7 @@ def load_partition(name: str) -> pd.DataFrame:
             f"{path} not found. Run `python -m src.validate` and "
             f"`python -m src.split` first."
         )
-    return pd.read_csv(path)
+    return pd.read_csv(path, sep=";")  # partitions are written with ";" by src.split
 
 
 def predict_clipped(model, frame: pd.DataFrame) -> np.ndarray:
