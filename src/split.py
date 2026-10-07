@@ -33,12 +33,12 @@ def ids_hash(ids: list[int]) -> str:
 
 
 def main() -> int:
-    clean_path = PROCESSED_DIR / "clean.csv"
+    clean_path = PROCESSED_DIR / "student-mat-clean.csv"
     if not clean_path.exists():
-        print("ERROR: data/processed/clean.csv not found. Run `python -m src.validate` first.")
+        print("ERROR: data/processed/student-mat-clean.csv not found. Run `python -m src.validate` first.")
         return 1
 
-    df = pd.read_csv(clean_path)
+    df = pd.read_csv(clean_path, sep=";")
     parts = make_partitions(df)
 
     # Self-check: every row in exactly one partition.

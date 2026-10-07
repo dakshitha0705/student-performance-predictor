@@ -1,26 +1,16 @@
-"""Stage 1: validate the raw mathematics CSV and write a cleaned working copy.
+"""Validate student data while preserving the original CSV."""
 
-Run:  python -m src.validate
-
-Exit code 0 only when every required value is valid. Rules (guide section 9):
-  G1, G2   integer 0..20
-  studytime integer 1..4
-  G3       integer 0..20   (training only)
-Missing values are rejected, never imputed. Zeros are real grades.
-Only exact FULL-RECORD duplicates are removed (never rows that merely share
-the three feature values).
-"""
-from __future__ import annotations
-
-import math
+from pathlib import Path
+import json
 import sys
 
-import numpy as np
 import pandas as pd
 
-from .common import (
-    PROCESSED_DIR, RAW_CSV, DATA_DIR, TARGET, sha256_file, utc_now, write_json,
-)
+
+ROOT = Path(__file__).resolve().parents[1]
+DATASET = ROOT / "data" / "raw" / "student-mat.csv"
+REPORT = ROOT / "data" / "validation.json"
+CLEANED = ROOT / "data" / "processed" / "student-mat-clean.csv"
 
 RULES = {
     "G1": (0, 20),
@@ -28,113 +18,185 @@ RULES = {
     "studytime": (1, 4),
     "G3": (0, 20),
 }
-INPUT_FIELDS = ["G1", "G2", "studytime"]
 
 
-def check_value(value, low: int, high: int) -> str | None:
-    """Return a rejection reason, or None when the value is valid."""
-    if value is None:
-        return "missing"
-    if isinstance(value, (bool, np.bool_)):
-        return "not an integer (boolean)"
-    if isinstance(value, (float, np.floating)):
-        if math.isnan(value):
-            return "missing"
-        if not float(value).is_integer():
-            return "not an integer"
-        value = int(value)
-    elif isinstance(value, (int, np.integer)):
-        value = int(value)
-    else:
-        return f"not an integer ({type(value).__name__})"
-    if value < low or value > high:
-        return f"out of range {low}..{high}"
-    return None
+def validate_dataframe(df):
+    """Return a validation report without changing the input."""
+    issues = []
+    missing_counts = {}
+    invalid_counts = {}
 
+    missing_columns = [
+        column for column in RULES if column not in df.columns
+    ]
 
-def validate_frame(df: pd.DataFrame, require_target: bool = True) -> list[dict]:
-    """Return a list of issues: {row, source_row_id, field, value, reason}."""
-    issues: list[dict] = []
-    fields = INPUT_FIELDS + ([TARGET] if require_target else [])
-    for field in fields:
-        if field not in df.columns:
-            issues.append({"row": None, "source_row_id": None, "field": field,
-                           "value": None, "reason": "column missing"})
-    present = [f for f in fields if f in df.columns]
-    has_id = "source_row_id" in df.columns
-    for field in present:
-        low, high = RULES[field]
-        for index, value in df[field].items():
-            reason = check_value(value, low, high)
-            if reason:
-                issues.append({
-                    "row": int(index) if isinstance(index, (int, np.integer)) else str(index),
-                    "source_row_id": int(df.at[index, "source_row_id"]) if has_id else None,
-                    "field": field,
-                    "value": None if pd.isna(value) else str(value),
-                    "reason": reason,
-                })
-    return issues
+    for column in missing_columns:
+        issues.append({
+            "field": column,
+            "problem": "Required column is missing",
+        })
 
+    if df.empty:
+        issues.append({"problem": "Dataset contains no records"})
 
-def remove_full_duplicates(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """Drop rows identical in EVERY source column (source_row_id ignored)."""
-    compare = df.drop(columns=["source_row_id"], errors="ignore")
-    duplicated = compare.duplicated(keep="first")
-    return df.loc[~duplicated].copy(), int(duplicated.sum())
+    # This name is reserved for the identifier added during cleaning.
+    if "source_row_id" in df.columns:
+        issues.append({
+            "field": "source_row_id",
+            "problem": "Reserved column already exists in source data",
+        })
 
+    for column, (minimum, maximum) in RULES.items():
+        if column not in df.columns:
+            continue
 
-def main() -> int:
-    if not RAW_CSV.exists():
-        print(f"ERROR: {RAW_CSV} not found. Run `python scripts/download_data.py` "
-              f"or place student-mat.csv in data/raw/.")
-        return 1
+        values = df[column]
+        numeric = pd.to_numeric(values, errors="coerce")
 
-    df = pd.read_csv(RAW_CSV, sep=";")
-    if df.shape[1] < 5:
-        print("ERROR: CSV parsed into too few columns. It must be read with sep=';'.")
-        return 1
+        missing = (
+            values.isna()
+            | values.astype(str).str.strip().eq("")
+        )
+        boolean = values.map(
+            lambda value: isinstance(value, bool)
+        )
+        not_numeric = numeric.isna() & ~missing
+        outside_range = (
+            numeric.notna()
+            & ~numeric.between(minimum, maximum)
+        )
+        non_integer = (
+            numeric.notna()
+            & numeric.between(minimum, maximum)
+            & numeric.mod(1).ne(0)
+        )
 
-    # Assign the audit id BEFORE any cleaning.
-    df.insert(0, "source_row_id", range(len(df)))
+        missing_counts[column] = int(missing.sum())
 
-    required = INPUT_FIELDS + [TARGET]
-    missing_counts = {f: (int(df[f].isna().sum()) if f in df.columns else None) for f in required}
-    issues = validate_frame(df, require_target=True)
+        invalid = (
+            boolean | not_numeric | outside_range | non_integer
+        ) & ~missing
+        invalid_counts[column] = int(invalid.sum())
 
-    report = {
-        "created_at_utc": utc_now(),
-        "source_file": str(RAW_CSV.relative_to(RAW_CSV.parents[2])).replace("\\", "/"),
-        "dataset_sha256": sha256_file(RAW_CSV),
-        "row_count_source": int(len(df)),
+        checks = [
+            (missing, "Missing value"),
+            (boolean & ~missing, "Boolean is not an accepted integer"),
+            (not_numeric, "Value is not numeric"),
+            (
+                outside_range,
+                f"Value must be between {minimum} and {maximum}",
+            ),
+            (non_integer, "Value must be a whole number"),
+        ]
+
+        for mask, message in checks:
+            for position, failed in enumerate(mask):
+                if failed:
+                    issues.append({
+                        "record": position + 1,
+                        "field": column,
+                        "value": str(values.iloc[position]),
+                        "problem": message,
+                    })
+
+    # Compare ALL original columns, not just model input columns.
+    duplicates = df.duplicated(keep="first")
+    duplicate_records = [
+        position + 1
+        for position, duplicate in enumerate(duplicates)
+        if duplicate
+    ]
+
+    return {
+        "row_count": int(len(df)),
+        "required_columns": list(RULES),
+        "missing_columns": missing_columns,
         "missing_value_counts": missing_counts,
-        "invalid_values": issues[:500],
-        "invalid_value_total": len(issues),
+        "invalid_value_counts": invalid_counts,
+        "exact_duplicate_count": int(duplicates.sum()),
+        "duplicate_record_numbers": duplicate_records,
+        "valid": len(issues) == 0,
+        "issue_count": len(issues),
+        "issues": issues,
     }
 
-    if issues:
-        report.update({"status": "failed", "full_record_duplicates_removed": None,
-                       "row_count_clean": None})
-        write_json(DATA_DIR / "validation.json", report)
-        print(f"FAILED: {len(issues)} invalid value(s). See data/validation.json")
-        for issue in issues[:10]:
-            print("  ", issue)
+
+def clean_dataframe(df):
+    """Remove exact duplicate records from a separate working copy."""
+    keep = ~df.duplicated(keep="first")
+
+    working = df.copy()
+    working.insert(0, "source_row_id", range(1, len(df) + 1))
+
+    return working.loc[keep].reset_index(drop=True)
+
+
+def validate_file(dataset_path, report_path, cleaned_path):
+    """Validate a CSV, save its report and write valid cleaned data."""
+    dataset_path = Path(dataset_path)
+    report_path = Path(report_path)
+    cleaned_path = Path(cleaned_path)
+
+    paths = [
+        dataset_path.resolve(),
+        report_path.resolve(),
+        cleaned_path.resolve(),
+    ]
+    if len(set(paths)) != 3:
+        raise ValueError("Source, report and cleaned paths must differ.")
+
+    try:
+        df = pd.read_csv(dataset_path, sep=";")
+    except (OSError, ValueError, UnicodeError) as error:
+        report = {
+            "valid": False,
+            "issue_count": 1,
+            "issues": [{"problem": f"Cannot read dataset: {error}"}],
+        }
+    else:
+        report = validate_dataframe(df)
+
+    report["file_name"] = dataset_path.name
+    report["cleaned_file_written"] = False
+
+    if report["valid"]:
+        cleaned = clean_dataframe(df)
+        cleaned_path.parent.mkdir(parents=True, exist_ok=True)
+        cleaned.to_csv(cleaned_path, sep=";", index=False)
+
+        report["cleaned_row_count"] = int(len(cleaned))
+        report["cleaned_file_written"] = True
+    else:
+        # Remove only a previous generated output, never the source.
+        # This prevents later steps from using stale cleaned data.
+        if cleaned_path.exists():
+            cleaned_path.unlink()
+
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(report, indent=2),
+        encoding="utf-8",
+    )
+
+    return report
+
+
+def main():
+    report = validate_file(DATASET, REPORT, CLEANED)
+    print(f"Report: {REPORT}")
+
+    if not report["valid"]:
+        print(f"FAIL: {report['issue_count']} validation issue(s).")
+        print("Read data/validation.json for details.")
         return 1
 
-    clean, removed = remove_full_duplicates(df)
-    for field in required:
-        clean[field] = clean[field].astype(int)
-
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    clean.to_csv(PROCESSED_DIR / "clean.csv", index=False)
-    report.update({
-        "status": "passed",
-        "full_record_duplicates_removed": removed,
-        "row_count_clean": int(len(clean)),
-    })
-    write_json(DATA_DIR / "validation.json", report)
-    print(f"OK: {len(df)} source rows, {removed} full duplicate(s) removed, "
-          f"{len(clean)} clean rows -> data/processed/clean.csv")
+    print(f"PASS: {report['row_count']} source records validated.")
+    print(
+        "Exact duplicates removed from working copy: "
+        f"{report['exact_duplicate_count']}"
+    )
+    print(f"Cleaned records: {report['cleaned_row_count']}")
+    print(f"Cleaned dataset: {CLEANED}")
     return 0
 
 

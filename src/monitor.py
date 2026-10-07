@@ -32,7 +32,7 @@ from .common import (  # noqa: E402
     REPORTS_DIR, ROOT, TARGET, load_active_model, load_partition, predict_clipped,
     regression_metrics, utc_now, write_json,
 )
-from .validate import INPUT_FIELDS, validate_frame  # noqa: E402
+from .input_checks import INPUT_FIELDS, validate_frame  # noqa: E402
 
 THRESHOLD = 0.5
 SHIFT_AMOUNT = 5

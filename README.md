@@ -35,7 +35,7 @@ The file is **semicolon-separated** and is never modified. Raw data and model ar
 ## 3. Pipeline (run in this order; each command exits 0 only on success)
 
 ```powershell
-python -m src.validate        # data/validation.json, data/processed/clean.csv
+python -m src.validate        # data/validation.json, data/processed/student-mat-clean.csv
 python -m src.split           # data/processed/{train,validation,test,later}.csv, data/splits.json
 python -m src.baselines       # reports/baselines.csv
 python -m src.train           # MLflow runs, artifacts/model-v1.joblib + model-v1.json + active-model.json

@@ -1,66 +1,150 @@
-import numpy as np
+import hashlib
+
 import pandas as pd
 import pytest
 
-from src.validate import check_value, remove_full_duplicates, validate_frame
+from src.validate import (
+    clean_dataframe,
+    validate_dataframe,
+    validate_file,
+)
 
 
-def one_row(**overrides):
-    row = {"source_row_id": 0, "G1": 10, "G2": 10, "studytime": 2, "G3": 10}
-    row.update(overrides)
-    return pd.DataFrame([row])
+def valid_data():
+    return pd.DataFrame({
+        "G1": [12, 15],
+        "G2": [14, 16],
+        "studytime": [2, 3],
+        "G3": [14, 17],
+    })
 
 
-@pytest.mark.parametrize("g1,g2,st,g3", [(0, 0, 1, 0), (20, 20, 4, 20), (12, 14, 2, 15)])
-def test_valid_boundary_values_pass(g1, g2, st, g3):
-    assert validate_frame(one_row(G1=g1, G2=g2, studytime=st, G3=g3)) == []
+def test_valid_data_passes():
+    report = validate_dataframe(valid_data())
+    assert report["valid"] is True
+    assert report["issue_count"] == 0
 
 
-@pytest.mark.parametrize("field,value", [
-    ("G1", -1), ("G1", 21), ("G2", -1), ("G2", 21),
-    ("studytime", 0), ("studytime", 5), ("G3", -1), ("G3", 21),
-])
-def test_out_of_range_fails_with_row_and_field(field, value):
-    issues = validate_frame(one_row(**{field: value}))
-    assert len(issues) == 1
-    assert issues[0]["field"] == field
-    assert issues[0]["source_row_id"] == 0
-    assert "out of range" in issues[0]["reason"]
+def test_boundary_values_pass():
+    df = pd.DataFrame({
+        "G1": [0, 20],
+        "G2": [0, 20],
+        "studytime": [1, 4],
+        "G3": [0, 20],
+    })
+    assert validate_dataframe(df)["valid"] is True
 
 
-@pytest.mark.parametrize("value", [12.5, "12", True, None, np.nan])
-def test_wrong_type_or_missing_fails(value):
-    frame = one_row()
-    frame["G1"] = pd.Series([value], dtype=object)
-    assert validate_frame(frame) != []
+@pytest.mark.parametrize("field", ["G1", "G2", "studytime", "G3"])
+def test_missing_required_column_fails(field):
+    df = valid_data().drop(columns=[field])
+    report = validate_dataframe(df)
+    assert report["valid"] is False
+    assert field in report["missing_columns"]
 
 
-def test_missing_column_fails():
-    frame = one_row().drop(columns=["studytime"])
-    issues = validate_frame(frame)
-    assert any(i["field"] == "studytime" and i["reason"] == "column missing" for i in issues)
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_missing_value_fails(value):
+    df = valid_data().astype(object)
+    df.loc[0, "G1"] = value
+
+    report = validate_dataframe(df)
+
+    assert report["valid"] is False
+    assert report["missing_value_counts"]["G1"] == 1
 
 
-def test_zero_grade_is_valid_not_missing():
-    assert check_value(0, 0, 20) is None
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("G1", -1),
+        ("G2", 21),
+        ("G3", 25),
+        ("studytime", 0),
+        ("studytime", 5),
+        ("G1", 12.5),
+        ("studytime", 2.5),
+        ("G2", "hello"),
+        ("G1", True),
+    ],
+)
+def test_invalid_value_fails(field, value):
+    df = valid_data().astype(object)
+    df.loc[0, field] = value
+    assert validate_dataframe(df)["valid"] is False
 
 
-def test_whole_number_float_is_accepted_because_nan_forces_float_dtype():
-    assert check_value(12.0, 0, 20) is None
+def test_empty_dataset_fails():
+    df = valid_data().iloc[:0]
+    assert validate_dataframe(df)["valid"] is False
 
 
-def test_prediction_validation_does_not_require_target():
-    frame = one_row().drop(columns=["G3"])
-    assert validate_frame(frame, require_target=False) == []
+def test_exact_duplicate_is_removed():
+    original = valid_data()
+    df = pd.concat([original, original.iloc[[0]]], ignore_index=True)
+
+    report = validate_dataframe(df)
+    cleaned = clean_dataframe(df)
+
+    assert report["valid"] is True
+    assert report["exact_duplicate_count"] == 1
+    assert len(cleaned) == 2
+    assert cleaned["source_row_id"].tolist() == [1, 2]
+
+    # Cleaning must not modify the input DataFrame.
+    assert len(df) == 3
+    assert "source_row_id" not in df.columns
 
 
-def test_only_full_record_duplicates_are_removed():
-    rows = pd.DataFrame([
-        {"source_row_id": 0, "G1": 10, "G2": 11, "studytime": 2, "G3": 12, "school": "GP"},
-        {"source_row_id": 1, "G1": 10, "G2": 11, "studytime": 2, "G3": 12, "school": "GP"},  # exact duplicate
-        {"source_row_id": 2, "G1": 10, "G2": 11, "studytime": 2, "G3": 15, "school": "GP"},  # same inputs only
-        {"source_row_id": 3, "G1": 10, "G2": 11, "studytime": 2, "G3": 12, "school": "MS"},  # different other column
-    ])
-    cleaned, removed = remove_full_duplicates(rows)
-    assert removed == 1
-    assert cleaned["source_row_id"].tolist() == [0, 2, 3]
+def test_matching_inputs_do_not_mean_duplicate_students():
+    df = pd.DataFrame({
+        "G1": [12, 12],
+        "G2": [14, 14],
+        "studytime": [2, 2],
+        "G3": [15, 15],
+        "school": ["GP", "MS"],
+    })
+
+    assert validate_dataframe(df)["exact_duplicate_count"] == 0
+    assert len(clean_dataframe(df)) == 2
+
+
+def test_file_validation_preserves_raw_bytes(tmp_path):
+    source = tmp_path / "raw.csv"
+    report_path = tmp_path / "validation.json"
+    cleaned_path = tmp_path / "clean.csv"
+
+    df = valid_data()
+    df = pd.concat([df, df.iloc[[0]]], ignore_index=True)
+    df.to_csv(source, sep=";", index=False)
+
+    before = hashlib.sha256(source.read_bytes()).hexdigest()
+    report = validate_file(source, report_path, cleaned_path)
+    after = hashlib.sha256(source.read_bytes()).hexdigest()
+
+    assert before == after
+    assert report["valid"] is True
+    assert report_path.exists()
+    assert report["cleaned_row_count"] == 2
+
+    cleaned = pd.read_csv(cleaned_path, sep=";")
+    assert len(cleaned) == 2
+    assert "source_row_id" in cleaned.columns
+
+
+def test_invalid_data_removes_stale_cleaned_output(tmp_path):
+    source = tmp_path / "raw.csv"
+    report_path = tmp_path / "validation.json"
+    cleaned_path = tmp_path / "clean.csv"
+
+    df = valid_data()
+    df.loc[0, "G1"] = -1
+    df.to_csv(source, sep=";", index=False)
+    cleaned_path.write_text("old generated data", encoding="utf-8")
+
+    report = validate_file(source, report_path, cleaned_path)
+
+    assert report["valid"] is False
+    assert report["cleaned_file_written"] is False
+    assert report_path.exists()
+    assert not cleaned_path.exists()
