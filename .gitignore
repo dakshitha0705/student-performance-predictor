@@ -1,0 +1,18 @@
+# Environments and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# Generated / large / machine-local (record checksums instead of committing these)
+mlruns/
+logs/*
+!logs/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+artifacts/*.joblib
+artifacts/candidates/
+artifacts/active-model.backup.json

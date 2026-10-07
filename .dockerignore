@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.env
+data
+logs
+mlruns
+artifacts
+evidence
+reports
+docs
+tests
