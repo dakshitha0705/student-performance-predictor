@@ -1,0 +1,14 @@
+{
+  "file_name": "student-mat.csv",
+  "row_count": 395,
+  "required_columns": [
+    "G1",
+    "G2",
+    "studytime",
+    "G3"
+  ],
+  "missing_columns": [],
+  "valid": true,
+  "issue_count": 0,
+  "issues": []
+}
