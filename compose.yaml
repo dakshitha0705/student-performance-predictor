@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    command: python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts:/app/artifacts:ro   # versioned model + active-model.json, read-only
+      - ./logs:/app/logs                # prediction events survive container restarts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  ui:
+    build: .
+    command: python -m streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://api:8000          # inside Docker the API is reached by service name, not localhost
+    depends_on:
+      - api
+    restart: unless-stopped
