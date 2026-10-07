@@ -1,0 +1,14 @@
+﻿{
+    "source_url":  "https://archive.ics.uci.edu/dataset/320/student+performance",
+    "file_name":  "student-mat.csv",
+    "download_date":  "2026-10-05",
+    "row_count":  395,
+    "sha256":  "E47F9EE225E1EE6E69B7564E6DAC7123E80B8486677FE111F351964CEF5DEC80",
+    "delimiter":  ";",
+    "input_features":  [
+                           "G1",
+                           "G2",
+                           "studytime"
+                       ],
+    "target":  "G3"
+}
