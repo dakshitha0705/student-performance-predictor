@@ -1,0 +1,47 @@
+{
+  "created_at_utc": "2026-10-08T15:44:23Z",
+  "reference": {
+    "training_g2_mean": 10.813559322033898,
+    "training_g2_population_std": 3.7999758084474666,
+    "denominator": 3.7999758084474666,
+    "threshold": 0.5
+  },
+  "batches": [
+    {
+      "batch": "normal (validation, unmodified)",
+      "synthetic": false,
+      "rows": 59,
+      "missing_inputs": 0,
+      "invalid_inputs": 0,
+      "g2_mean": 10.610169491525424,
+      "shift_score": 0.05352398035175171,
+      "trigger": "no_shift"
+    },
+    {
+      "batch": "shifted (validation G2 - 5, clipped at 0)",
+      "synthetic": true,
+      "rows": 59,
+      "missing_inputs": 0,
+      "invalid_inputs": 0,
+      "g2_mean": 5.694915254237288,
+      "shift_score": 1.3470201721857549,
+      "trigger": "input_shift"
+    }
+  ],
+  "active_model_version": "v1",
+  "normal_batch_metrics": {
+    "mae": 1.3730088747963356,
+    "rmse": 2.435942554061137,
+    "r2": 0.7426348284657778
+  },
+  "prediction_log_summary": {
+    "events": 2,
+    "by_status": {
+      "success": 1,
+      "validation_error": 1
+    },
+    "by_model_version": {
+      "v1": 2
+    }
+  }
+}
