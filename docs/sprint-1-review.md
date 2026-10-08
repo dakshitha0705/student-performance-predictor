@@ -20,8 +20,7 @@
 | SPP-15 | A1 API | Chaitanya | Done |
 | SPP-27 | T2 Sprint 1 evidence | Dakshitha | In Review (see below) |
 
-Each story was merged through a pull request that passed CI. Reviewers are recorded on the pull requests in GitHub.
-
+CI runs on every push and pull request (see GitHub Actions); stories were merged through pull requests.
 ## Outcome
 - Planned: 26 story points.
 - Completed points: taken from Jira's Sprint report once the sprint is closed, and added in a follow-up commit. They are not estimated here.
@@ -29,11 +28,10 @@ Each story was merged through a pull request that passed CI. Reviewers are recor
 - Carried-over issues: none expected. T2 will be Done before the sprint is closed; if it is not, it is recorded here as carried over.
 
 ## Why the sprint ran 7 Oct to 8 Oct
-The original plan was a longer window (6 Oct to 19 Oct). The team compressed the schedule and carried out Sprint 1 on 7 and 8 October, so the sprint dates were set to the days the work really happened.
+The project was planned for a 6 Oct to 19 Oct window. The team carried out Sprint 1 on 7 and 8 October, and the sprint dates in Jira were edited to 7 to 8 October to match the days the work actually happened.
 
 ## Status of T2 (this task)
-T2 is In Review. Pull request #6 was opened for review and Divya's corrections have been applied. T2 moves to Done only when the pull request is approved and merged. This document will not say otherwise.
-
+T2 is In Review. It is completed after Sprint 1 is closed: the actual sprint points and the E07 burndown and velocity reports are added, and Divya gives final approval. If the sprint closes first, T2 is recorded as carried over to Sprint 2.
 ## Retrospective
 What went well:
 - CI caught a Windows-only package and it was fixed before merging.
