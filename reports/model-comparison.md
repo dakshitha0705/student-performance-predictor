@@ -1,6 +1,6 @@
 # Model comparison
 
-Generated 2026-10-07T17:37:57Z from the validation partition only. The final test partition has not been used for any decision here.
+Generated 2026-10-08T02:13:39Z from the validation partition only. The final test partition has not been used for any decision here.
 
 ## Baselines
 
@@ -15,8 +15,8 @@ The stronger baseline by MAE is **previous_grade** (MAE 1.2542 grade points vers
 
 | Candidate | MAE | RMSE | R2 | MLflow run ID |
 |---|---|---|---|---|
-| ridge | 1.3730 | 2.4359 | 0.7426 | 1d291be8c0674051be9a280de38baff9 |
-| random_forest | 1.4807 | 2.4995 | 0.7290 | 85e5842869804bd4955e986576c76292 |
+| ridge | 1.3730 | 2.4359 | 0.7426 | 3c26c11d3b8f41e89e01bc005f125aa8 |
+| random_forest | 1.4807 | 2.4995 | 0.7290 | 972f2fa1c9c74b7889b3ad0a5902ecfa |
 
 ## Selection
 

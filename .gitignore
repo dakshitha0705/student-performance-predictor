@@ -1,5 +1,6 @@
 # Environments and caches
 .venv/
+.venv311/
 __pycache__/
 *.pyc
 .pytest_cache/
