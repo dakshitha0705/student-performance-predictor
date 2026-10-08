@@ -1,0 +1,20 @@
+{
+  "created_at_utc": "2026-10-08T15:48:52Z",
+  "model_family": "ridge",
+  "v1_validation": {
+    "mae": 1.3730088747963356,
+    "rmse": 2.435942554061137,
+    "r2": 0.7426348284657778
+  },
+  "v2_validation": {
+    "mae": 1.3987139981169967,
+    "rmse": 2.4451997710447295,
+    "r2": 0.7406750020605526
+  },
+  "mae_improvement_v1_minus_v2": -0.025705123320661105,
+  "required_improvement": 0.05,
+  "tests_passed": true,
+  "decision": "keep_v1",
+  "v2_mlflow_run_id": "30679ce1b87f4d88bb536045776aa6e1",
+  "note": "active-model.json was NOT changed by this script."
+}
